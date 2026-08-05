@@ -68,6 +68,10 @@ func NewUIService(bs *bot.BotService) *UIService {
 	ui.mux.HandleFunc("POST /api/bot/state", ui.postBotStateHandler)
 	ui.mux.HandleFunc("GET /healthz", ui.healthzHandler)
 
+	ui.mux.HandleFunc("GET /api/honeypots", ui.getHoneypotsHandler)
+	ui.mux.HandleFunc("POST /api/honeypots", ui.postHoneypotsHandler)
+	ui.mux.HandleFunc("DELETE /api/honeypots/{guild_id}", ui.deleteHoneypotHandler)
+
 	return ui
 }
 

@@ -178,3 +178,77 @@ func (ui *UIService) healthzHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+type HoneypotPayload struct {
+	GuildID   string `json:"guild_id"`
+	ChannelID string `json:"channel_id"`
+}
+
+func (ui *UIService) getHoneypotsHandler(w http.ResponseWriter, r *http.Request) {
+	if !ui.IsBotEnabled() {
+		jsonSuccess(w, map[string]any{})
+		return
+	}
+	ui.bs.HoneypotsMu.RLock()
+	defer ui.bs.HoneypotsMu.RUnlock()
+	jsonSuccess(w, ui.bs.Honeypots)
+}
+
+func (ui *UIService) postHoneypotsHandler(w http.ResponseWriter, r *http.Request) {
+	if !ui.IsBotEnabled() {
+		jsonError(w, "Bot is disabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	var payload HoneypotPayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		jsonError(w, "Invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+
+	if payload.GuildID == "" || payload.ChannelID == "" {
+		jsonError(w, "Guild ID and Channel ID are required", http.StatusBadRequest)
+		return
+	}
+
+	// Send the initial message to that channel
+	content := "**0** people were banned because they wrote here."
+	msg, err := ui.us.Session.ChannelMessageSend(payload.ChannelID, content)
+	if err != nil {
+		jsonError(w, "Failed to send initial honeypot message to the channel. Make sure the bot has access to that channel: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	ui.bs.HoneypotsMu.Lock()
+	ui.bs.Honeypots[payload.GuildID] = &bot.HoneypotState{
+		ChannelID: payload.ChannelID,
+		MessageID: msg.ID,
+		BanCount:  0,
+	}
+	ui.bs.HoneypotsMu.Unlock()
+
+	ui.bs.SaveHoneypots()
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (ui *UIService) deleteHoneypotHandler(w http.ResponseWriter, r *http.Request) {
+	if !ui.IsBotEnabled() {
+		jsonError(w, "Bot is disabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	guildID := r.PathValue("guild_id")
+	if guildID == "" {
+		jsonError(w, "Guild ID is required", http.StatusBadRequest)
+		return
+	}
+
+	ui.bs.HoneypotsMu.Lock()
+	delete(ui.bs.Honeypots, guildID)
+	ui.bs.HoneypotsMu.Unlock()
+
+	ui.bs.SaveHoneypots()
+
+	w.WriteHeader(http.StatusNoContent)
+}

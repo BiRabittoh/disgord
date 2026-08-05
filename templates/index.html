@@ -521,6 +521,7 @@
         const API_BASE = '';
         let guildsData = [];
         let queuesData = [];
+        let honeypotsData = {};
         let selectedChannels = {};
         let refreshInterval;
 
@@ -549,17 +550,19 @@
 
         async function fetchData() {
             try {
-                const [guildsRes, queuesRes] = await Promise.all([
+                const [guildsRes, queuesRes, honeypotsRes] = await Promise.all([
                     fetch(`${API_BASE}/api/guilds`),
-                    fetch(`${API_BASE}/api/queues`)
+                    fetch(`${API_BASE}/api/queues`),
+                    fetch(`${API_BASE}/api/honeypots`)
                 ]);
 
-                if (!guildsRes.ok || !queuesRes.ok) {
+                if (!guildsRes.ok || !queuesRes.ok || !honeypotsRes.ok) {
                     throw new Error('Error when loading data');
                 }
 
                 guildsData = await guildsRes.json();
                 queuesData = await queuesRes.json();
+                honeypotsData = await honeypotsRes.json();
 
                 renderGuilds(true);
             } catch (error) {
@@ -574,6 +577,10 @@
 
         function getVoiceChannels(guild) {
             return guild.channels.filter(c => c.type === 2);
+        }
+
+        function getTextChannels(guild) {
+            return guild.channels.filter(c => c.type === 0);
         }
 
         function getUsersInChannel(guild, channelId) {
@@ -690,6 +697,13 @@ function renderGuildCard(guild) {
                         </div>
                     ` : ''}
 
+                    ${getTextChannels(guild).length > 0 ? `
+                        <div class="channels-section">
+                            <div class="section-title">📝 Text Channels</div>
+                            ${getTextChannels(guild).map(ch => renderTextChannel(guild, ch)).join('')}
+                        </div>
+                    ` : ''}
+
                     <div class="queue-section">
                         ${queue ? renderQueue(guild.id, queue, selectedChannel) : renderNoQueue(guild.id, selectedChannel)}
                     </div>
@@ -722,6 +736,76 @@ function renderVoiceChannel(guild, channel, selectedChannel) {
             ` : ''}
         </div>
     `;
+}
+
+function renderTextChannel(guild, channel) {
+    const hp = honeypotsData[guild.id];
+    const isHoneypot = hp && hp.channel_id === channel.id;
+
+    return `
+        <div class="channel text-channel" style="display:flex; align-items:center; justify-content:space-between; cursor:default;">
+            <div style="display:flex; align-items:center; gap:8px; font-size:0.9rem;">
+                <span class="channel-icon">#</span>
+                <span class="channel-name" style="font-weight: 500;">${channel.name}</span>
+                ${isHoneypot ? `<span class="user-count" style="background:var(--danger); color:white; font-size:0.8rem; font-weight:600;">🍯 Honeypot (Banned: ${hp.ban_count})</span>` : ''}
+            </div>
+            <div>
+                ${isHoneypot ? `
+                    <button class="guild-leave" style="padding: 4px 8px; font-size:0.8rem;" onclick="handleRemoveHoneypot('${guild.id}')">Remove</button>
+                ` : `
+                    <button class="btn-secondary" style="padding: 4px 8px; font-size:0.8rem;" onclick="handleSetHoneypot('${guild.id}', '${channel.id}')">Set Honeypot</button>
+                `}
+            </div>
+        </div>
+    `;
+}
+
+async function handleSetHoneypot(guildId, channelId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/honeypots`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                guild_id: guildId,
+                channel_id: channelId
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to set honeypot');
+        }
+
+        showToast('Honeypot channel set successfully', 'success');
+        await fetchData();
+    } catch (error) {
+        console.error('Error:', error);
+        showToast(error.message, 'error');
+    }
+}
+
+async function handleRemoveHoneypot(guildId) {
+    if (!confirm('Are you sure you want to remove the honeypot from this server?')) {
+        return;
+    }
+    try {
+        const response = await fetch(`${API_BASE}/api/honeypots/${guildId}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to remove honeypot');
+        }
+
+        showToast('Honeypot channel removed successfully', 'success');
+        await fetchData();
+    } catch (error) {
+        console.error('Error:', error);
+        showToast(error.message, 'error');
+    }
 }
 
 function renderQueue(guildId, queue, selectedChannel) {

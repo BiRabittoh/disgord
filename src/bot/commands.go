@@ -30,14 +30,19 @@ type BotService struct {
 	watchdogDone    chan struct{}
 	ready           chan struct{}
 	readyOnce       sync.Once
+
+	Honeypots   map[string]*HoneypotState
+	HoneypotsMu sync.RWMutex
 }
 
 func NewBotService(cfg *config.Config) (bs *BotService, err error) {
 	bs = &BotService{
-		US:       gl.NewUtilsService(cfg),
-		aliasMap: make(map[string]string),
-		ready:    make(chan struct{}),
+		US:        gl.NewUtilsService(cfg),
+		aliasMap:  make(map[string]string),
+		ready:     make(chan struct{}),
+		Honeypots: make(map[string]*HoneypotState),
 	}
+	bs.LoadHoneypots()
 	bs.logger = slog.New(tint.NewHandler(os.Stdout, &tint.Options{
 		Level:      bs.US.Config.LogLevel,
 		TimeFormat: cfg.TimeFormat,
@@ -144,6 +149,10 @@ func (bs *BotService) watchGateway(done chan struct{}) {
 // don't remove the 's' parameter
 func (bs *BotService) messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author == nil || m.Author.ID == bs.US.Session.State.User.ID {
+		return
+	}
+
+	if bs.CheckHoneypot(s, m) {
 		return
 	}
 
