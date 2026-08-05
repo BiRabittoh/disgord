@@ -42,6 +42,7 @@ func NewBotService(cfg *config.Config) (bs *BotService, err error) {
 		ready:     make(chan struct{}),
 		Honeypots: make(map[string]*HoneypotState),
 	}
+	bs.LoadHoneypots()
 	bs.logger = slog.New(tint.NewHandler(os.Stdout, &tint.Options{
 		Level:      bs.US.Config.LogLevel,
 		TimeFormat: cfg.TimeFormat,

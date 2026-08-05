@@ -212,7 +212,7 @@ func (ui *UIService) postHoneypotsHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	// Send the initial message to that channel
-	content := "**🍯 Honeypot Channel 🍯**\n\nI have banned **0** people who wrote here."
+	content := "**0** people were banned because they wrote here."
 	msg, err := ui.us.Session.ChannelMessageSend(payload.ChannelID, content)
 	if err != nil {
 		jsonError(w, "Failed to send initial honeypot message to the channel. Make sure the bot has access to that channel: "+err.Error(), http.StatusInternalServerError)
@@ -226,6 +226,8 @@ func (ui *UIService) postHoneypotsHandler(w http.ResponseWriter, r *http.Request
 		BanCount:  0,
 	}
 	ui.bs.HoneypotsMu.Unlock()
+
+	ui.bs.SaveHoneypots()
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -245,6 +247,8 @@ func (ui *UIService) deleteHoneypotHandler(w http.ResponseWriter, r *http.Reques
 	ui.bs.HoneypotsMu.Lock()
 	delete(ui.bs.Honeypots, guildID)
 	ui.bs.HoneypotsMu.Unlock()
+
+	ui.bs.SaveHoneypots()
 
 	w.WriteHeader(http.StatusNoContent)
 }

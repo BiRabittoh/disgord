@@ -1,15 +1,54 @@
 package bot
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/bwmarrin/discordgo"
 )
+
+const HoneypotsFile = "honeypots.json"
 
 type HoneypotState struct {
 	ChannelID string `json:"channel_id"`
 	MessageID string `json:"message_id"`
 	BanCount  int    `json:"ban_count"`
+}
+
+func (bs *BotService) SaveHoneypots() {
+	bs.HoneypotsMu.RLock()
+	defer bs.HoneypotsMu.RUnlock()
+
+	data, err := json.MarshalIndent(bs.Honeypots, "", "  ")
+	if err != nil {
+		bs.logger.Error("failed to marshal honeypots config", "error", err)
+		return
+	}
+
+	err = os.WriteFile(HoneypotsFile, data, 0644)
+	if err != nil {
+		bs.logger.Error("failed to write honeypots config file", "error", err)
+	}
+}
+
+func (bs *BotService) LoadHoneypots() {
+	bs.HoneypotsMu.Lock()
+	defer bs.HoneypotsMu.Unlock()
+
+	data, err := os.ReadFile(HoneypotsFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return
+		}
+		bs.logger.Error("failed to read honeypots config file", "error", err)
+		return
+	}
+
+	err = json.Unmarshal(data, &bs.Honeypots)
+	if err != nil {
+		bs.logger.Error("failed to unmarshal honeypots config", "error", err)
+	}
 }
 
 func (bs *BotService) IsAdmin(guildID, userID, channelID string) bool {
@@ -66,8 +105,10 @@ func (bs *BotService) CheckHoneypot(s *discordgo.Session, m *discordgo.MessageCr
 	msgID := hp.MessageID
 	bs.HoneypotsMu.Unlock()
 
+	bs.SaveHoneypots()
+
 	if msgID != "" {
-		newContent := fmt.Sprintf("**🍯 Honeypot Channel 🍯**\n\nI have banned **%d** people who wrote here.", banCount)
+		newContent := fmt.Sprintf("**%d** people were banned because they wrote here.", banCount)
 		_, err := s.ChannelMessageEdit(m.ChannelID, msgID, newContent)
 		if err != nil {
 			bs.logger.Error("failed to edit honeypot message", "channel_id", m.ChannelID, "message_id", msgID, "error", err)
