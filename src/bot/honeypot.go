@@ -90,6 +90,12 @@ func (bs *BotService) CheckHoneypot(s *discordgo.Session, m *discordgo.MessageCr
 	}
 
 	// User is NOT an admin. Instantly permaban them and delete messages from last 24h (1 day).
+	// The triggering message itself is deleted explicitly since it can be sent too recently
+	// for Discord's delete_message_days sweep (part of the ban call) to catch it.
+	if err := s.ChannelMessageDelete(m.ChannelID, m.Message.ID); err != nil {
+		bs.logger.Error("failed to delete honeypot-triggering message", "guild_id", m.GuildID, "channel_id", m.ChannelID, "message_id", m.Message.ID, "error", err)
+	}
+
 	err := s.GuildBanCreateWithReason(m.GuildID, m.Author.ID, "Triggered honeypot channel", 1)
 	if err != nil {
 		bs.logger.Error("failed to ban user after triggering honeypot", "guild_id", m.GuildID, "user_id", m.Author.ID, "error", err)
